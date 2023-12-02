@@ -14,13 +14,22 @@ META_RELEASE="$(wget -qO- http://changelogs.ubuntu.com/meta-release-lts | grep '
 ## Script starts here
 #
 # Ask the user if they want to run the script
+clear # Clear the screen
+echo ""
+echo "  ____    ____       _     _________  _____  ____   ____  ________  "
+echo " |_   \  /   _|     / \   |  _   _  ||_   _||_  _| |_  _||_   __  | "
+echo "   |   \/   |      / _ \  |_/ | | \_|  | |    \ \   / /    | |_ \_| "
+echo "   | |\  /| |     / ___ \     | |      | |     \ \ / /     |  _| _  "
+echo "  _| |_\/_| |_  _/ /   \ \_  _| |_    _| |_     \ ' /     _| |__/ | "
+echo " |_____||_____||____| |____||_____|  |_____|     \_/     |________| "
+echo ""
 echo "Release Upgrade v$SCRIPT_VERSION (c) Maksym Titenko"
 echo ""
 echo "Ubuntu current version: $CURENT_UBUNTU_VERSION"
 echo ""
 echo "Checking for a new Ubuntu release:"
-echo "Get: 1. ubuntu-distro-info --lts: $LATEST_UBUNTU_VERSION"
-echo "Get: 2. meta-release-lts: $META_RELEASE"
+echo "Get: ubuntu-distro-info --lts: $LATEST_UBUNTU_VERSION"
+echo "Get: meta-release-lts: $META_RELEASE"
 echo ""
 echo -n "This script checks for system updates, upgrades to the latest LTS version, and performs cleanup. Do you want to run it? (y/n): "
 read run_choice
