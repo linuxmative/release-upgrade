@@ -1,0 +1,250 @@
+#!/bin/bash
+# Name   : Release Upgrade
+# Licence: GPL3 (http://www.gnu.org/licenses/gpl.html)
+# Author : Maksym Titenko
+# System : Ubuntu Linux and derivatives.
+# Script Description:
+# This script checks for system updates, upgrades to the latest LTS version, and performs cleanup.
+#
+SCRIPT_VERSION="0.0.1"
+CURENT_UBUNTU_VERSION="$(grep "UBUNTU_CODENAME=" /etc/os-release | cut -d= -f2)"
+LATEST_UBUNTU_VERSION="$(ubuntu-distro-info --lts)"
+META_RELEASE="$(wget -qO- http://changelogs.ubuntu.com/meta-release-lts | grep '^Dist: ' | tail -n 1 | awk '{print $2}')"
+#
+## Script starts here
+#
+# Ask the user if they want to run the script
+echo "Release Upgrade v$SCRIPT_VERSION (c) Maksym Titenko"
+echo ""
+echo "Ubuntu current version: $CURENT_UBUNTU_VERSION"
+echo ""
+echo "Checking for a new Ubuntu release:"
+echo "Get: 1. ubuntu-distro-info --lts: $LATEST_UBUNTU_VERSION"
+echo "Get: 2. meta-release-lts: $META_RELEASE"
+echo ""
+echo -n "This script checks for system updates, upgrades to the latest LTS version, and performs cleanup. Do you want to run it? (y/n): "
+read run_choice
+case $run_choice in
+[Yy]*)
+    # Continue with the script
+    ;;
+[Nn]*)
+    echo "Script execution aborted. No changes made."
+    exit 0
+    ;;
+*)
+    echo "Invalid choice. Script execution aborted."
+    exit 1
+    ;;
+esac
+
+# Check for system updates
+if sudo apt-get upgrade --dry-run | grep -q 'upgraded'; then
+    echo "There are updates available for your system."
+
+    # Ask the user if they want to upgrade the system
+    while true; do
+        echo -n "Do you want to upgrade your system now? (y/n): "
+        read upgrade_choice
+        case $upgrade_choice in
+        [Yy]*)
+            # Upgrade the system
+            sudo apt update
+            sudo apt upgrade -y
+            sudo apt full-upgrade -y
+            break
+            ;;
+        [Nn]*)
+            echo "Skipping system upgrade."
+            break
+            ;;
+        *)
+            echo "Please answer with 'y' or 'n'."
+            ;;
+        esac
+    done
+else
+    echo "Your system is up to date. No updates are required."
+fi
+
+# Check for the presence of the os-release file
+if [ -e /etc/os-release ]; then
+    # Import variables from the os-release file
+    . /etc/os-release
+
+    # Check for the presence of the UBUNTU_CODENAME variable
+    if [ -n "$UBUNTU_CODENAME" ]; then
+        ubuntu_codename=$UBUNTU_CODENAME
+    else
+        echo "Error: UBUNTU_CODENAME variable not found in the os-release file."
+        exit 1
+    fi
+else
+    echo "Error: The os-release file was not found."
+    exit 1
+fi
+
+# Function to get the latest LTS codename from the website
+get_latest_lts_codename() {
+    wget -qO- http://changelogs.ubuntu.com/meta-release-lts | grep '^Dist: ' | tail -n 1 | awk '{print $2}'
+}
+
+# Check if ubuntu-distro-info is available
+if command -v ubuntu-distro-info >/dev/null; then
+    latest_lts_codename=$(ubuntu-distro-info --lts)
+else
+    # Use the website as a fallback if ubuntu-distro-info is not available
+    latest_lts_codename=$(get_latest_lts_codename)
+fi
+
+if [ -z "$latest_lts_codename" ]; then
+    echo "Error: Could not determine the latest LTS version."
+    exit 1
+fi
+
+echo "Your current Ubuntu version is $ubuntu_codename."
+echo "The latest LTS version is $latest_lts_codename."
+
+# Compare the current version with the latest LTS version
+if [ "$ubuntu_codename" != "$latest_lts_codename" ]; then
+    while true; do
+        echo -n "Do you want to update your system to the latest LTS version? (y/n): "
+        read choice
+        case $choice in
+        [Yy]*)
+            # Update sources.list with the latest LTS version
+            sudo sed -i "s/$ubuntu_codename/$latest_lts_codename/g" /etc/apt/sources.list
+            echo "System updated to the latest LTS version ($latest_lts_codename)."
+
+            # Path to the sources.list file
+            sources_list="/etc/apt/sources.list"
+
+            # Clear existing content of sources.list
+            sudo echo "" | sudo tee $sources_list
+
+            # Array of repositories
+            repositories=(
+                "deb http://archive.ubuntu.com/ubuntu/ $latest_lts_codename main restricted universe multiverse"
+                "# deb-src http://archive.ubuntu.com/ubuntu/ $latest_lts_codename main restricted universe multiverse"
+                "deb http://archive.ubuntu.com/ubuntu/ $latest_lts_codename-updates main restricted universe multiverse"
+                "# deb-src http://archive.ubuntu.com/ubuntu/ $latest_lts_codename-updates main restricted universe multiverse"
+                "deb http://archive.ubuntu.com/ubuntu/ $latest_lts_codename-security main restricted universe multiverse"
+                "# deb-src http://archive.ubuntu.com/ubuntu/ $latest_lts_codename-security main restricted universe multiverse"
+                "deb http://archive.ubuntu.com/ubuntu/ $latest_lts_codename-backports main restricted universe multiverse"
+                "# deb-src http://archive.ubuntu.com/ubuntu/ $latest_lts_codename-backports main restricted universe multiverse"
+                "deb http://archive.canonical.com/ubuntu/ $latest_lts_codename partner"
+                "# deb-src http://archive.canonical.com/ubuntu/ $latest_lts_codename partner"
+            )
+
+            # Write repositories to the sources.list file
+            for repo in "${repositories[@]}"; do
+                echo "$repo" | sudo tee -a $sources_list
+            done
+
+            echo "The $sources_list file has been successfully updated."
+
+            # Check if the directory /etc/apt/sources.list.d exists
+            sources_list_d="/etc/apt/sources.list.d"
+            if [ -d "$sources_list_d" ]; then
+                # Loop through files in sources.list.d
+                for file in "$sources_list_d"/*; do
+                    # Check if the file contains the current Ubuntu codename
+                    if grep -q "$ubuntu_codename" "$file"; then
+                        # Replace the current codename with the latest LTS codename
+                        sudo sed -i "s/$ubuntu_codename/$latest_lts_codename/g" "$file"
+                        echo "Updated $file with the latest LTS codename."
+                    fi
+                done
+            fi
+
+            # Update the system
+            sudo apt update
+            sudo apt upgrade --without-new-pkgs -y
+            sudo apt upgrade -y
+            sudo apt full-upgrade -y
+
+            echo "System upgraded."
+
+            # Check if there are packages that can be removed
+            if sudo apt autoremove --dry-run | grep -q 'The following packages will be REMOVED'; then
+                echo "There are packages that can be removed. Do you want to remove them? (y/n): "
+                read remove_choice
+                case $remove_choice in
+                [Yy]*)
+                    # Remove unnecessary packages
+                    sudo apt --purge autoremove
+                    echo "Unnecessary packages removed."
+                    ;;
+                [Nn]*)
+                    echo "Skipping removal of unnecessary packages."
+                    ;;
+                *)
+                    echo "Invalid choice. Skipping removal of unnecessary packages."
+                    ;;
+                esac
+            else
+                echo "No packages to remove."
+            fi
+
+            # Check for conflicts and fix dependencies
+            if sudo apt install -f | grep -q 'Depends:'; then
+                echo "There are dependency conflicts. Attempting to fix them..."
+
+                # Try to fix dependencies
+                sudo apt install -f
+
+                # Check again after attempted fix
+                if sudo apt install -f | grep -q 'Depends:'; then
+                    echo "Dependency conflicts persist. Please review and resolve manually."
+                else
+                    echo "Dependency conflicts resolved."
+                fi
+            else
+                echo "No dependency conflicts found."
+            fi
+            # Remove old kernels
+            echo "Remove old kernels"
+            KEEP=2
+            APT_OPTS=""
+            while [ ! -z "$1" ]; do
+                case "$1" in
+                --keep)
+                    KEEP="$2"
+                    shift 2
+                    ;;
+                *)
+                    APT_OPTS="$APT_OPTS $1"
+                    shift 1
+                    ;;
+                esac
+            done
+
+            # Build a list of kernel packages to purge
+            CANDIDATES=$(ls -tr /boot/vmlinuz-* | head -n -${KEEP} | grep -v "$(uname -r)$" | cut -d- -f2- | awk '{print "linux-image-" $0 " linux-headers-" $0}')
+            PURGE=""
+            for c in $CANDIDATES; do
+                dpkg-query -s "$c" >/dev/null 2>&1 && PURGE="$PURGE $c"
+            done
+
+            if [ -z "$PURGE" ]; then
+                echo "No kernels are eligible for removal."
+            else
+                sudo apt $APT_OPTS remove -y --purge $PURGE
+                echo "Old kernels removed."
+            fi
+
+            break
+            ;;
+        [Nn]*)
+            echo "No changes made to sources.list. Exiting."
+            exit 0
+            ;;
+        *)
+            echo "Please answer with 'y' or 'n'."
+            ;;
+        esac
+    done
+else
+    echo "Your system is already running the latest LTS version."
+fi
+
